@@ -46,4 +46,12 @@ class Command_Tests: XCTestCase {
 	func testParametersFromSequenceOfNumbers () {
 		XCTAssertEqual( parameters([1, 2, 3]), " \"1\" \"2\" \"3\"" )
 	}
+    
+    func testUsesEnvironment () {
+        XCTAssertEqual(SwiftShell.run("echo $MY_VAR", environmentVariables:["MY_VAR":"my_value"]).read(), "my_value\n")
+    }
+    
+    func testAddsEnvVariablesToProcessEnvironment () {
+        XCTAssertEqual(SwiftShell.run("echo $PATH").read(), SwiftShell.run("echo $PATH", environmentVariables: ["MYVAR":"myValue"]).read())
+    }
 }

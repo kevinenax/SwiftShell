@@ -5,19 +5,23 @@
 *
 * Contributors:
 *	Kåre Morstøl, https://github.com/kareman - initial API and implementation.
+*   Kevin Enax, https://github.com/kevinenax - Addition of environment variable logic
 */
 
 import Foundation
 
-private func newtask (shellcommand: String) -> NSTask {
+private func newtask (shellcommand: String, environmentVariables:[String:String]?) -> NSTask {
 	let task = NSTask()
+    if let env = environmentVariables {
+        let pEnv = NSProcessInfo().environment
+        task.environment = env + pEnv
+    }
 	task.arguments = ["-c", shellcommand]
 	task.launchPath = "/bin/bash"
 	
 	return task
 }
 
-// TODO: explain thoroughly why this local state monstrosity is necessary.
 // Summary: it is used exclusively for sending a stream through the forward operator and use it as standardInput in a run command.
 // Required to enable "func run (shellcommand: String) -> ReadableStreamType" to also be run by itself on a single line.
 private var _nextinput_: ReadableStreamType?
@@ -45,32 +49,37 @@ or if to the right of a "ReadableStreamType |> ", use the stream on the left sid
 
 - returns: Standard output
 */
+
+public func run (shellcommand: String, environmentVariables:[String:String]?) -> ReadableStreamType {
+    let task = newtask(shellcommand, environmentVariables: environmentVariables)
+    
+    if let input = _nextinput_ {
+        task.standardInput = input as! FileHandle
+        _nextinput_ = nil
+    } else {
+        // avoids implicit reading of the main script's standardInput
+        task.standardInput = NSPipe ()
+    }
+    
+    let output = NSPipe ()
+    task.standardOutput = output
+    task.launch()
+    
+    // necessary for now to ensure one shellcommand is finished before another begins.
+    // uncontrolled asynchronous shell processes could be messy.
+    // but shell commands on the same line connected with the pipe operator should preferably be asynchronous.
+    task.waitUntilExit()
+    
+    return output.fileHandleForReading
+}
+
 public func run (shellcommand: String) -> ReadableStreamType {
-	let task = newtask(shellcommand)
-	
-	if let input = _nextinput_ {
-		task.standardInput = input as! FileHandle
-		_nextinput_ = nil
-	} else {
-		// avoids implicit reading of the main script's standardInput
-		task.standardInput = NSPipe ()
-	}
-	
-	let output = NSPipe ()
-	task.standardOutput = output
-	task.launch()
-	
-	// necessary for now to ensure one shellcommand is finished before another begins.
-	// uncontrolled asynchronous shell processes could be messy.
-	// but shell commands on the same line connected with the pipe operator should preferably be asynchronous.
-	task.waitUntilExit()
-	
-	return output.fileHandleForReading
+    return run(shellcommand, environmentVariables: nil)
 }
 
 /** Shortcut for in-line command, returns output as String. */
 public func $ (shellcommand: String) -> String {
-	let task = newtask(shellcommand)
+	let task = newtask(shellcommand, environmentVariables: nil)
 	
 	// avoids implicit reading of the main script's standardInput
 	task.standardInput = NSPipe ()
